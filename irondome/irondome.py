@@ -1,119 +1,138 @@
+#!/usr/bin/env python3
+
 import os
 import sys
 import time
-import math
-import logging
-import daemon
-import threading
 import psutil
-import subprocess
-from pathlib import Path
-from collections import Counter, defaultdict
+import logging
+import threading
+import math
+import hashlib
+import base64
 
-LOG_PATH = "/var/log/irondome"
-LOG_FILE = os.path.join(LOG_PATH, "irondome.log")
-ENTROPY_THRESHOLD = 7.5  # Threshold for high entropy
-SCAN_INTERVAL = 60       # Seconds between scans
-READ_THRESHOLD = 100     # Number of reads per interval considered abusive
-CRYPTO_PROCESSES = ['openssl', 'gpg', 'ssh', 'scp', 'sftp']
+# Setup logging
+LOG_DIR = "/var/log/irondome"
+LOG_FILE = os.path.join(LOG_DIR, "irondome.log")
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR, exist_ok=True)
 
-def check_root():
+logging.basicConfig(filename=LOG_FILE, level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s")
+
+# Globals
+READ_THRESHOLD_MB = 100
+ENTROPY_THRESHOLD = 6.5
+SCAN_INTERVAL = 60  # seconds
+MONITORED_DIR = None
+
+# Ignore list
+IGNORED_PROCESSES = {'systemd', 'packagekitd', 'rsyslogd', 'bash', 'chrome', 'code', 'python3'}
+
+# === Entropy detection ===
+def calculate_entropy(filepath):
+    try:
+        with open(filepath, 'rb') as f:
+            data = f.read(4096)
+        if not data:
+            return 0.0
+        byte_counts = [0] * 256
+        for b in data:
+            byte_counts[b] += 1
+        entropy = 0
+        for count in byte_counts:
+            if count == 0:
+                continue
+            p = count / len(data)
+            entropy -= p * math.log2(p)
+        return entropy
+    except Exception:
+        return 0.0
+
+def entropy_watcher():
+    scanned_files = {}
+    while True:
+        for root, dirs, files in os.walk(MONITORED_DIR):
+            for name in files:
+                path = os.path.join(root, name)
+                try:
+                    entropy = calculate_entropy(path)
+                    if path not in scanned_files:
+                        scanned_files[path] = entropy
+                    else:
+                        old_entropy = scanned_files[path]
+                        if abs(entropy - old_entropy) > 1.5 and entropy > ENTROPY_THRESHOLD:
+                            logging.warning(f"Entropy spike detected: {path} new entropy: {entropy:.2f}")
+                            scanned_files[path] = entropy
+                except Exception:
+                    continue
+        time.sleep(SCAN_INTERVAL)
+
+# === Disk read abuse detection ===
+def disk_abuse_watcher():
+    while True:
+        for proc in psutil.process_iter(['pid', 'name', 'io_counters', 'open_files']):
+            try:
+                name = proc.info['name']
+                if name in IGNORED_PROCESSES:
+                    continue
+
+                io = proc.info['io_counters']
+                if io and io.read_bytes > READ_THRESHOLD_MB * 1024 * 1024:
+                    open_files = proc.info['open_files'] or []
+                    if any(f.path.startswith(MONITORED_DIR) for f in open_files):
+                        read_mb = io.read_bytes / (1024 * 1024)
+                        logging.warning(f"Disk read abuse detected: PID {proc.pid} ({name}) read {read_mb:.2f} MB")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        time.sleep(SCAN_INTERVAL)
+
+# === Crypto detection (simple hashing loop detection) ===
+def crypto_activity_watcher():
+    sample = b"test_data_to_hash"
+    count = 0
+    start = time.time()
+    while True:
+        for _ in range(100000):
+            hashlib.sha256(sample).digest()
+        count += 1
+        if time.time() - start > 10:
+            if count > 10:
+                logging.warning("Intensive cryptographic activity detected.")
+            count = 0
+            start = time.time()
+        time.sleep(1)
+
+# === Main ===
+def main():
+    global MONITORED_DIR
+
     if os.geteuid() != 0:
         print("This program must be run as root.")
         sys.exit(1)
 
-def setup_logging():
-    os.makedirs(LOG_PATH, exist_ok=True)
-    logging.basicConfig(
-        filename=LOG_FILE,
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s"
-    )
+    if len(sys.argv) != 2:
+        print("Usage: sudo python3 irondome.py <directory_to_monitor>")
+        sys.exit(1)
 
-def calculate_entropy(data: bytes) -> float:
-    if not data:
-        return 0.0
-    counts = Counter(data)
-    length = len(data)
-    entropy = -sum((count / length) * math.log2(count / length) for count in counts.values())
-    return entropy
+    MONITORED_DIR = os.path.abspath(sys.argv[1])
+    if not os.path.isdir(MONITORED_DIR):
+        print("Invalid directory to monitor.")
+        sys.exit(1)
 
-def scan_directory_for_entropy(path, threshold=ENTROPY_THRESHOLD):
-    suspicious_files = []
-    for root, _, files in os.walk(path):
-        for fname in files:
-            fpath = os.path.join(root, fname)
-            try:
-                with open(fpath, "rb") as f:
-                    data = f.read(2048)  # Read only first 2KB for performance
-                    entropy = calculate_entropy(data)
-                    if entropy > threshold:
-                        suspicious_files.append((fpath, entropy))
-            except Exception as e:
-                logging.warning(f"Failed to read {fpath}: {e}")
-    return suspicious_files
+    logging.info(f"Irondome started monitoring: {MONITORED_DIR}")
 
-def monitor_entropy(monitored_path):
-    while True:
-        time.sleep(SCAN_INTERVAL)
-        alerts = scan_directory_for_entropy(monitored_path)
-        for fpath, entropy in alerts:
-            logging.warning(f"High entropy detected: {fpath} (entropy: {entropy:.2f})")
+    threads = [
+        threading.Thread(target=disk_abuse_watcher, daemon=True),
+        threading.Thread(target=crypto_activity_watcher, daemon=True),
+        threading.Thread(target=entropy_watcher, daemon=True)
+    ]
 
-def monitor_disk_reads(monitored_path):
-    read_counts = defaultdict(int)
-    while True:
-        time.sleep(SCAN_INTERVAL)
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                pid = proc.info['pid']
-                name = proc.info['name']
-                io_counters = proc.io_counters()
-                read_bytes = io_counters.read_bytes
-                read_counts[pid] = read_bytes
-                if read_bytes > READ_THRESHOLD * 1024 * 1024:  # Convert MB to bytes
-                    logging.warning(f"Disk read abuse detected: PID {pid} ({name}) read {read_bytes / (1024 * 1024):.2f} MB")
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-
-def monitor_crypto_activity():
-    while True:
-        time.sleep(SCAN_INTERVAL)
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                name = proc.info['name']
-                if name in CRYPTO_PROCESSES:
-                    logging.warning(f"Cryptographic activity detected: PID {proc.pid} ({name})")
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-
-def monitor_loop(monitored_path):
-    logging.info(f"Irondome started monitoring: {monitored_path}")
-    threads = []
-    t_entropy = threading.Thread(target=monitor_entropy, args=(monitored_path,))
-    t_reads = threading.Thread(target=monitor_disk_reads, args=(monitored_path,))
-    t_crypto = threading.Thread(target=monitor_crypto_activity)
-    threads.extend([t_entropy, t_reads, t_crypto])
     for t in threads:
-        t.daemon = True
         t.start()
-    while True:
-        time.sleep(1)
 
-def main(monitored_path):
-    check_root()
-    setup_logging()
-    monitor_loop(monitored_path)
+    # Keep alive
+    while True:
+        time.sleep(60)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print(f"Usage: sudo python3 {sys.argv[0]} <path-to-monitor>")
-        sys.exit(1)
-
-    monitored_path = Path(sys.argv[1])
-    if not monitored_path.exists() or not monitored_path.is_dir():
-        print(f"Invalid directory: {monitored_path}")
-        sys.exit(1)
-
-    with daemon.DaemonContext():
-        main(monitored_path)
+    main()
