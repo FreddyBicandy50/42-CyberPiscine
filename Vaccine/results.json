@@ -1,0 +1,12 @@
+[
+    {
+        "url": "http://testphp.vulnweb.com/artists.php?artist=1",
+        "vulnerable_parameters": [
+            "artist"
+        ],
+        "payloads": {
+            "artist": "' UNION SELECT NULL-- "
+        },
+        "db_type": "MySQL"
+    }
+]
