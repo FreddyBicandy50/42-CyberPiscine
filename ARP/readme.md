@@ -19,4 +19,4 @@ Follows the spec: parse command-line input (IP/MAC source/destination), enable I
 ## ⚙️ Build & Run
 ```bash
 make
-sudo ./arp_poison <src_ip> <src_mac> <dst_ip> <dst_mac>```
+sudo ./arp_poison <src_ip> <src_mac> <dst_ip> <dst_mac>
