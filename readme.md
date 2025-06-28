@@ -14,6 +14,7 @@ Follows the spec: parse command-line input (IP/MAC source/destination), enable I
 ```bash
 make
 sudo ./arp_poison <src_ip> <src_mac> <dst_ip> <dst_mac>
+```
 
 # Archinda
 
@@ -43,3 +44,4 @@ A CLI tool that downloads images from a website, optionally recursing into subpa
 ```bash
 make spider
 ./spider https://example.com
+```
