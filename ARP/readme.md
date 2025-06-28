@@ -1,21 +1,22 @@
-# Reverse Me I'm Famous
 
-## 🧩 Description
-Educational reverse engineering challenge.  
-The goal: analyze provided binaries, extract valid passwords, and write equivalent C source code reproducing the binary's logic.
+---
 
-## 📚 What you'll find here
-- Decompiled and clean-room rewritten C source code.
-- Notes and comments explaining reverse engineering decisions.
-- Valid passwords extracted from analysis.
+## 📁 **arp_poison/README.md**
 
-## ⚙️ Tools & Skills
-- Ghidra
-- objdump / strings
-- C programming & debugging
-- Understanding of x86 / ARM assembly
+```markdown
+# ARP Poison
 
-## 📝 Usage
+## 🐍 ARP Spoofing Tool (Educational)
+
+Implements ARP poisoning to intercept traffic between two hosts.  
+Follows the spec: parse command-line input (IP/MAC source/destination), enable IP forwarding, and use two threads for poisoning and sniffing.
+
+## 📚 Features
+- Sends crafted ARP packets to poison target cache.
+- Sniffs packets between victim and gateway.
+- Proper cleanup and forwarding restore.
+
+## ⚙️ Build & Run
 ```bash
 make
-./challenge
+sudo ./arp_poison <src_ip> <src_mac> <dst_ip> <dst_mac>
