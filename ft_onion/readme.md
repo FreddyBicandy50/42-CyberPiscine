@@ -1,22 +1,21 @@
+# ft_onion
+
+## 🧅 Upload HTML file over the Tor network
+
+**ft_onion** is an educational project created as part of the 42 Cybersecurity Piscine.  
+It demonstrates how to securely send (or "set") an HTML file to a hidden service using the Tor network.
 
 ---
 
-## 📁 **arp_poison/README.md**
-
-```markdown
-# ARP Poison
-
-## 🐍 ARP Spoofing Tool (Educational)
-
-Implements ARP poisoning to intercept traffic between two hosts.  
-Follows the spec: parse command-line input (IP/MAC source/destination), enable IP forwarding, and use two threads for poisoning and sniffing.
-
 ## 📚 Features
-- Sends crafted ARP packets to poison target cache.
-- Sniffs packets between victim and gateway.
-- Proper cleanup and forwarding restore.
+- Connects to `.onion` hidden services via Tor.
+- Sends an HTML file as content.
+- Verifies upload response (or logs errors).
 
-## ⚙️ Build & Run
+---
+
+## ⚙️ Usage
+
+Install requirements:
 ```bash
-make
-sudo ./arp_poison <src_ip> <src_mac> <dst_ip> <dst_mac>
+pip install -r requirements.txt
